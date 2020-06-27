@@ -4,13 +4,7 @@
 #include <thread>
 #include <cstdint>
 
-
-void Function()
-{
-    std::cout << "FUNCTION" << std::endl;
-}
-
-#define BUF_SIZE 256
+#define BUF_SIZE 1024
 
 HANDLE hMapFile;
 LPCTSTR pBuf;
