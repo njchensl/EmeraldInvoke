@@ -57,6 +57,24 @@ enum class MemStatus : int
     ClientRead = 2
 };
 
+// round up util func
+template <typename T, T multiple>
+static T RoundUp(T numToRound)
+{
+    if (multiple == 0)
+    {
+        return numToRound;
+    }
+
+    int remainder = numToRound % multiple;
+    if (remainder == 0)
+    {
+        return numToRound;
+    }
+
+    return numToRound + multiple - remainder;
+}
+
 // extern "C" __declspec(dllexport) void fun(char a, short i, int* ptr)
 // {
 //     std::cout << a << std::endl;
@@ -75,11 +93,18 @@ int main()
     }
     CInvContext* context = cinv_context_create();
     ptr[0] = (int)MemStatus::Idle;
-    
+
     // ptr[0] = 1;
-    // uint8_t data[] = {0, 3, 'f', 'u', 'n', 0, '\0', 3, 'c', 's', 'p', 77, 10, 0, 4, 0, 0, 0, 20, 0, 0, 0};
-    // memcpy(ptr + 1, data, sizeof(data));
-    
+    // uint8_t data[] = {
+    //     0, 0, 0, 0, 0, 0, 0, 0,
+    //     3, 'f', 'u', 'n', 0, 0, 0, 0,
+    //     0, '\0', 3, 'c', 's', 'p', 0, 0,
+    //     77, 0, 0, 0, 0, 0, 0, 0,
+    //     10, 0, 0, 0, 0, 0, 0, 0,
+    //     4, 0, 0, 0, 0, 0, 0, 0,
+    //     20, 0, 0, 0, 0, 0, 0, 0};
+    // memcpy(ptr + 2, data, sizeof(data));
+
 
     // start receiving commands
     for (;;)
@@ -119,20 +144,22 @@ int main()
             MemBlockAllocator allocator(4096);
 
             // get module
-            uint8_t* head = (uint8_t*)(ptr + 1);
+            uint8_t* head = (uint8_t*)(ptr + 2);
             uint8_t moduleNameLength = *head;
-            head++;
             HMODULE module;
             if (moduleNameLength == 0)
             {
                 module = GetModuleHandle(nullptr);
+                head += 8;
             }
             else
             {
+                head++;
                 char* dllName = (char*)allocator.Allocate(moduleNameLength + 1);
                 memcpy(dllName, head, moduleNameLength);
                 dllName[moduleNameLength] = '\0';
                 head += moduleNameLength;
+                head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)head);
                 module = LoadLibraryA(dllName);
             }
             // get proc address
@@ -142,6 +169,7 @@ int main()
             memcpy(procName, head, procNameLength);
             procName[procNameLength] = '\0';
             head += procNameLength;
+            head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)head);
             FARPROC procAddress = GetProcAddress(module, procName);
             if (!procAddress)
             {
@@ -162,6 +190,7 @@ int main()
             char* paramFormat = (char*)allocator.Allocate(numParams + 1);
             memcpy(paramFormat, head, numParams);
             head += numParams;
+            head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)head);
             paramFormat[numParams] = '\0';
             // params
             void** params = (void**)allocator.Allocate(sizeof(void*) * numParams);
@@ -174,7 +203,7 @@ int main()
                 switch (paramCode)
                 {
 #define PARAM_CODE(name, type) case name : { memcpy(paramDataHead, head, sizeof(type)); \
-                        head += sizeof(type);                                           \
+                        head += 8;                                           \
                         params[i] = paramDataHead;                                      \
                         break; }
                 PARAM_CODE('c', char)
@@ -186,14 +215,15 @@ int main()
                 PARAM_CODE('d', double)
                 case 'p':
                 {
-                    unsigned int size = *(unsigned int*)head;
-                    head += sizeof(unsigned int);
+                    unsigned int size = *(unsigned int*)head;  // NOLINT(clang-diagnostic-cast-align)
+                    head += 8;
                     MemBlock dataBlock(size, head);
                     head += size;
                     void* dataPtr = dataBlock.Get();
                     memcpy(paramDataHead, &dataPtr, sizeof(void*));
                     memBlocks.push_back(std::move(dataBlock));
                     params[i] = paramDataHead;
+                    head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)head);
                     break;
                 }
                 PARAM_CODE('2', uint16_t)
@@ -211,8 +241,9 @@ int main()
                 std::cerr << "Error" << std::endl;
             }
             cinv_function_delete(context, func);
-            head = (uint8_t*)(ptr + 1);
+            head = (uint8_t*)(ptr + 2);
             memcpy(head, &returnVal, 8);
+            head += 8;
             // restore pointers
             // information regarding the size of the blocks is known by the caller
             for (MemBlock& block : memBlocks)
@@ -220,6 +251,7 @@ int main()
                 unsigned int blockSize = block.GetSize();
                 memcpy(head, block.Get(), blockSize);
                 head += blockSize;
+                head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)head);
             }
             ptr[0] = (int)MemStatus::ClientRead;
             break;
