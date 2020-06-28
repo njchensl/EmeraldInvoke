@@ -57,10 +57,12 @@ enum class MemStatus : int
     ClientRead = 2
 };
 
-// extern "C" __declspec(dllexport) void fun(int i, int* ptr)
+// extern "C" __declspec(dllexport) void fun(char a, short i, int* ptr)
 // {
+//     std::cout << a << std::endl;
 //     std::cout << i << std::endl;
 //     std::cout << *ptr << std::endl;
+//     *ptr = 30;
 // }
 
 int main()
@@ -73,11 +75,11 @@ int main()
     }
     CInvContext* context = cinv_context_create();
     ptr[0] = (int)MemStatus::Idle;
-    //
+    
     // ptr[0] = 1;
-    // uint8_t data[] = {0, 3, 'f', 'u', 'n', 0, '\0', 2, 'i', 'p', 10, 0, 0, 0, 4, 0, 0, 0, 20, 0, 0, 0};
+    // uint8_t data[] = {0, 3, 'f', 'u', 'n', 0, '\0', 3, 'c', 's', 'p', 77, 10, 0, 4, 0, 0, 0, 20, 0, 0, 0};
     // memcpy(ptr + 1, data, sizeof(data));
-    //
+    
 
     // start receiving commands
     for (;;)
@@ -211,6 +213,14 @@ int main()
             cinv_function_delete(context, func);
             head = (uint8_t*)(ptr + 1);
             memcpy(head, &returnVal, 8);
+            // restore pointers
+            // information regarding the size of the blocks is known by the caller
+            for (MemBlock& block : memBlocks)
+            {
+                unsigned int blockSize = block.GetSize();
+                memcpy(head, block.Get(), blockSize);
+                head += blockSize;
+            }
             ptr[0] = (int)MemStatus::ClientRead;
             break;
         }
