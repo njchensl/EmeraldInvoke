@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "MemBlock.h"
+#include "Utils.h"
 
 #define BUF_SIZE 8192
 
@@ -56,24 +57,6 @@ enum class MemStatus : int
     ServerRead = 1,
     ClientRead = 2
 };
-
-// round up util func
-template <typename T, T multiple>
-static T RoundUp(T numToRound)
-{
-    if (multiple == 0)
-    {
-        return numToRound;
-    }
-
-    int remainder = numToRound % multiple;
-    if (remainder == 0)
-    {
-        return numToRound;
-    }
-
-    return numToRound + multiple - remainder;
-}
 
 // extern "C" __declspec(dllexport) void fun(char a, short i, int* ptr)
 // {
@@ -133,8 +116,10 @@ int main()
 
                 void* Allocate(unsigned int size)
                 {
+                    void* ptr = m_Head;
                     m_Head += size;
-                    return m_Head - size;
+                    m_Head = (uint8_t*)RoundUp<unsigned int, 8>((unsigned int)m_Head);
+                    return ptr;
                 }
 
             private:
@@ -215,7 +200,7 @@ int main()
                 PARAM_CODE('d', double)
                 case 'p':
                 {
-                    unsigned int size = *(unsigned int*)head;  // NOLINT(clang-diagnostic-cast-align)
+                    unsigned int size = *(unsigned int*)head; // NOLINT(clang-diagnostic-cast-align)
                     head += 8;
                     MemBlock dataBlock(size, head);
                     head += size;
